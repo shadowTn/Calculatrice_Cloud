@@ -22,53 +22,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function setOperation(op) {
         if (currentInput === '') return;
-        
-        if (previousInput !== '') {
-            calculateResult();
-        }
-        
+        if (previousInput !== '') return;
         operation = op;
         previousInput = currentInput;
         shouldResetScreen = true;
-    }
-
-    function calculateResult() {
-        if (previousInput === '' || operation === null || shouldResetScreen) return;
-        
-        let computation;
-        const prev = parseFloat(previousInput);
-        const current = parseFloat(currentInput);
-        
-        if (isNaN(prev) || isNaN(current)) return;
-        
-        switch (operation) {
-            case '+':
-                computation = prev + current;
-                break;
-            case '-':
-                computation = prev - current;
-                break;
-            case '*':
-                computation = prev * current;
-                break;
-            case '/':
-                if (current === 0) {
-                    currentInput = 'Error';
-                    updateDisplay();
-                    setTimeout(clearDisplay, 1500);
-                    return;
-                }
-                computation = prev / current;
-                break;
-            default:
-                return;
-        }
-        
-        currentInput = computation.toString();
-        operation = null;
-        previousInput = '';
-        shouldResetScreen = true;
-        updateDisplay();
     }
 
     function clearDisplay() {
@@ -78,42 +35,59 @@ document.addEventListener('DOMContentLoaded', function() {
         updateDisplay();
     }
 
-    // Add event listeners to all buttons
+    // ⭐Envoi au backend
+    async function calculateCloudResult() {
+        if (previousInput === '' || operation === null) return;
+        
+        let response = await fetch("/api/operation", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({"first_element": previousInput, "second_element": currentInput, "operation": operation})
+        });
+        let data = await response.json();
+        let job_id = data.id;
+
+        // Polling pour récupérer résultat
+        let interval = setInterval(async () => {
+            let res = await fetch("/api/result/" + job_id);
+
+            if (res.status === 404) {
+                currentInput = "Erreur";
+                updateDisplay();
+                clearInterval(interval);
+                return;
+            }
+
+            let resultData = await res.json();
+
+            if (resultData.status === "done") {
+                currentInput = resultData.result.toString();
+                updateDisplay();
+                clearInterval(interval);
+            }
+        }, 1000);
+
+        previousInput = '';
+        operation = null;
+        shouldResetScreen = true;
+    }
+
+    // Gestion des boutons
     document.querySelectorAll('button').forEach(button => {
         button.addEventListener('click', function() {
             if (this.hasAttribute('data-number')) {
                 appendNumber(this.getAttribute('data-number'));
-            } else if (this.hasAttribute('data-operation')) {
+            } 
+            else if (this.hasAttribute('data-operation')) {
                 setOperation(this.getAttribute('data-operation'));
-            } else if (this.getAttribute('data-action') === 'equals') {
-                calculateResult();
-            } else if (this.getAttribute('data-action') === 'clear') {
+            } 
+            else if (this.getAttribute('data-action') === 'equals') {
+                calculateCloudResult();   // << appel cloud ici
+            } 
+            else if (this.getAttribute('data-action') === 'clear') {
                 clearDisplay();
             }
         });
-    });
-
-    // Keyboard support
-    document.addEventListener('keydown', (event) => {
-        if (event.key >= '0' && event.key <= '9') {
-            appendNumber(event.key);
-        } else if (event.key === '.') {
-            appendNumber('.');
-        } else if (event.key === '+' || event.key === '-' || event.key === '*' || event.key === '/') {
-            setOperation(event.key);
-        } else if (event.key === 'Enter' || event.key === '=') {
-            event.preventDefault();
-            calculateResult();
-        } else if (event.key === 'Escape' || event.key === 'Delete') {
-            clearDisplay();
-        } else if (event.key === 'Backspace') {
-            if (currentInput.length > 1 && currentInput !== '0') {
-                currentInput = currentInput.slice(0, -1);
-            } else {
-                currentInput = '0';
-            }
-            updateDisplay();
-        }
     });
 
     updateDisplay();
