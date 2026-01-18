@@ -47,13 +47,13 @@ resource "scaleway_registry_namespace" "main" {
 resource "scaleway_k8s_cluster" "main" {
   name                        = "calculatrice-cluster-moussa-amen"
   region                      = var.region
-  version                     = "1.29.x"
+  version                     = "1.29.0"
   cni                         = "cilium"
   delete_additional_resources = false
 
   # Configuration de l'auto-upgrade pour les mises à jour automatiques
   auto_upgrade {
-    enable                        = true
+    enable                        = false
     maintenance_window_day        = "monday"
     maintenance_window_start_hour = 2
   }

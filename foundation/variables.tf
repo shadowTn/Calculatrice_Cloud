@@ -28,7 +28,7 @@ variable "zone" {
 variable "project_id" {
   description = "ID du projet Scaleway (à remplacer par votre ID réel)"
   type        = string
-  default     = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  default     = "12345678-1234-1234-1234-123456789012"
 }
 
 # Variable pour la zone DNS
