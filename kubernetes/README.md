@@ -1,5 +1,3 @@
-Fichier Pod.yaml
-
 apiVersion: apps/v1
 kind: ReplicaSet
 metadata:
