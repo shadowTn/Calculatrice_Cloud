@@ -1,185 +1,155 @@
-# FICHIER PRINCIPAL DE CONFIGURATION TERRAFORM
-# Projet : Calculatrice Cloud Native
-# Binôme : Moussa & Amen
-# Région : Paris (fr-par)
-
-# Configure le fournisseur (provider) Scaleway.
-# C'est ici qu'on définit la version du provider et qu'on s'assure
-# que Terraform saura comment interagir avec l'API de Scaleway.
 terraform {
   required_providers {
     scaleway = {
       source  = "scaleway/scaleway"
-      version = ">= 2.0"
+      version = "~> 2.42"
     }
   }
   required_version = ">= 1.0"
 }
 
-# Configuration du provider avec la région et le projet.
-# La région est définie via une variable pour plus de flexibilité.
-provider "scaleway" {
-  zone       = var.zone
-  project_id = var.project_id
+# Variables obligatoires du sujet
+variable "binome_names" {
+  description = "Noms des membres d equipe"
+  type        = string
+  default     = "chaieb-farikou-diomande"
 }
 
-# RESSOURCES DE L'INFRASTRUCTURE
-# 1. REGISTRE DE CONTENEURS (Container Registry)
-# Ce registre stockera les images Docker de nos microservices :
-# - Frontend (interface utilisateur)
-# - Backend (API REST)
-# - Consumer (traitement des calculs)
-# Il est configuré en privé pour sécuriser notre code.
+variable "zone" {
+  description = "Zone Scaleway (fr-par-1 ou fr-par-2)"
+  type        = string
+  default     = "fr-par-1"
+}
+
+variable "region" {
+  description = "Région Scaleway (fr-par)"
+  type        = string
+  default     = "fr-par"
+}
+
+# Locals pour simplifier les noms dev/prod
+locals {
+  environments = ["dev", "prod"]
+  domain_name = {
+    dev  = "calculatrice-dev-${var.binome_names}"
+    prod = "calculatrice-${var.binome_names}"
+  }
+  lb_name = {
+    dev  = "lb-dev-${var.binome_names}"
+    prod = "lb-prod-${var.binome_names}"
+  }
+}
+
+# 1. Container Registry (unique)
 resource "scaleway_registry_namespace" "main" {
-  name        = "calculatrice-registry-moussa-amen"
-  description = "Registre de conteneurs pour la calculatrice Cloud Native - Binôme Moussa & Amen"
+  name        = "registry-${var.binome_names}"
+  description = "Registry pour le projet calculatrice"
   is_public   = false
   region      = var.region
 }
 
-# 2. CLUSTER KUBERNETES (K8s)
-# C'est le cœur de notre application. Il orchestrera nos conteneurs.
-# On utilise un cluster Kapsule, qui est la solution managée de Scaleway.
-# Configuration :
-# - Version : 1.29.x (avec auto-upgrade activé)
-# - CNI : Cilium (pour la gestion du réseau)
-# - Auto-scaling : Activé pour adapter les ressources à la charge
+# 2. VPC Private Network (optionnelle mais utile)
+resource "scaleway_vpc_private_network" "main" {
+  name   = "vpc-${var.binome_names}"
+  region = var.region
+}
+
+# 3. Kubernetes Cluster (unique)
 resource "scaleway_k8s_cluster" "main" {
-  name                        = "calculatrice-cluster-moussa-amen"
-  region                      = var.region
-  version                     = "1.29.0"
+  name                        = "k8s-${var.binome_names}"
+  version                     = "1.32"
   cni                         = "cilium"
-  delete_additional_resources = false
+  private_network_id          = scaleway_vpc_private_network.main.id
+  delete_additional_resources = true
+  region                      = var.region
 
-  # Configuration de l'auto-upgrade pour les mises à jour automatiques
   auto_upgrade {
-    enable                        = false
-    maintenance_window_day        = "monday"
-    maintenance_window_start_hour = 2
-  }
-
-  # Configuration de l'autoscaler pour adapter le nombre de nœuds
-  autoscaler_config {
-    disable_scale_down         = false
-    scale_down_delay_after_add = "10m"
-    estimator                  = "binpacking"
+    enable                       = true
+    maintenance_window_start_hour = 3
+    maintenance_window_day       = "monday"
   }
 }
 
-# 3. POOL DE NOEUDS KUBERNETES
-# Pool de nœuds par défaut pour le cluster.
-# Configuration :
-# - Type : DEV1-M (instances suffisantes pour ce projet)
-# - Taille initiale : 3 nœuds
-# - Auto-scaling : Entre 1 et 5 nœuds selon la charge
-# - Auto-healing : Activé pour remplacer les nœuds défaillants
-resource "scaleway_k8s_pool" "default" {
+# 4. Node Pool (unique)
+resource "scaleway_k8s_pool" "main" {
   cluster_id  = scaleway_k8s_cluster.main.id
-  name        = "default-pool-moussa-amen"
+  name        = "pool-${var.binome_names}"
   node_type   = "DEV1-M"
-  size        = 3
+  size        = 2
   min_size    = 1
-  max_size    = 5
+  max_size    = 3
   autoscaling = true
   autohealing = true
-  tags        = ["calculatrice", "pool-default", "moussa-amen"]
-}
-
-# 4. RÉSEAU PRIVÉ VPC
-# Réseau privé pour la communication sécurisée entre nos ressources.
-# Permet à Kubernetes, Redis et autres services de communiquer sans passer par Internet.
-resource "scaleway_vpc_private_network" "main" {
-  name = "vpc-calculatrice-moussa-amen"
-  tags = ["calculatrice", "moussa-amen"]
-}
-
-# 5. BASES DE DONNÉES REDIS
-# Redis est utilisé pour stocker les résultats des calculs de manière persistante.
-# On crée deux instances : une pour le développement et une pour la production.
-# Chacune est connectée au réseau privé VPC pour la sécurité.
-
-# Redis pour l'environnement de DÉVELOPPEMENT
-resource "scaleway_redis_cluster" "db_dev" {
-  name         = "redis-db-dev-moussa-amen"
-  version      = "7.2"
-  zone         = var.zone
-  node_type    = "REDIS-DEV-S"
-  cluster_size = 1
-  tls_enabled  = true
-  user_name    = "dev_user"
-  password     = var.redis_dev_password
-
-  # Configuration du réseau privé pour la communication sécurisée
-  private_network {
-    id = scaleway_vpc_private_network.main.id
-  }
-
-  tags = ["calculatrice", "dev", "moussa-amen"]
-}
-
-# Redis pour l'environnement de PRODUCTION
-resource "scaleway_redis_cluster" "db_prod" {
-  name         = "redis-db-prod-moussa-amen"
-  version      = "7.2"
-  zone         = var.zone
-  node_type    = "REDIS-DEV-S"
-  cluster_size = 1
-  tls_enabled  = true
-  user_name    = "prod_user"
-  password     = var.redis_prod_password
-
-  # Configuration du réseau privé pour la communication sécurisée
-  private_network {
-    id = scaleway_vpc_private_network.main.id
-  }
-
-  tags = ["calculatrice", "prod", "moussa-amen"]
-}
-
-# 6. LOAD BALANCERS
-# Les Load Balancers exposent nos services sur Internet et répartissent le trafic.
-# On en crée un pour l'environnement de développement et un pour la production.
-# Chacun a sa propre adresse IP publique et son propre enregistrement DNS.
-
-# Load Balancer pour l'environnement de DÉVELOPPEMENT
-resource "scaleway_lb" "lb_dev" {
-  name        = "lb-dev-moussa-amen"
-  description = "Load Balancer pour l'environnement de développement - Binôme Moussa & Amen"
-  type        = "LB-S"
   zone        = var.zone
-  tags        = ["calculatrice", "dev", "moussa-amen"]
+  region      = var.region
 }
 
-# Load Balancer pour l'environnement de PRODUCTION
-resource "scaleway_lb" "lb_prod" {
-  name        = "lb-prod-moussa-amen"
-  description = "Load Balancer pour l'environnement de production - Binôme Moussa & Amen"
-  type        = "LB-S"
-  zone        = var.zone
-  tags        = ["calculatrice", "prod", "moussa-amen"]
+# 5. RDB PostgreSQL Instance (unique)
+resource "scaleway_rdb_instance" "main" {
+  name           = "db-${var.binome_names}"
+  node_type      = "DB-DEV-S"
+  engine         = "PostgreSQL-15"
+  is_ha_cluster  = false
+  disable_backup = true
+  user_name      = "admin"
+  password       = "SecurePassword2026!"  # À changer plus tard
+  region         = var.region
+
+  private_network {
+    pn_id        = scaleway_vpc_private_network.main.id
+    enable_ipam  = true
+  }
 }
 
-# 7. ENREGISTREMENTS DNS
+# 6. Deux bases dans la même instance
+resource "scaleway_rdb_database" "development" {
+  instance_id = scaleway_rdb_instance.main.id
+  name        = "development"
+}
 
-# On crée les entrées DNS pour que les noms de domaine pointent vers nos Load Balancers.
-# Cela permet d'accéder à l'application via une URL conviviale.
-# Format : calculatrice-[dev-]moussa-amen.polytech-dijon.kiowy.net
+resource "scaleway_rdb_database" "production" {
+  instance_id = scaleway_rdb_instance.main.id
+  name        = "production"
+}
 
-# Enregistrement DNS pour l'environnement de DÉVELOPPEMENT
-resource "scaleway_domain_record" "dns_dev" {
-  dns_zone = var.dns_zone
-  name     = "calculatrice-dev-moussa-amen"
+# 7. IPs publiques + LoadBalancers (un par environnement)
+resource "scaleway_lb_ip" "main" {
+  for_each = toset(local.environments)
+  zone     = var.zone
+}
+
+resource "scaleway_lb" "main" {
+  for_each = toset(local.environments)
+  name     = local.lb_name[each.key]
+  type     = "LB-S"
+  zone     = var.zone
+  ip_ids   = [scaleway_lb_ip.main[each.key].id]
+}
+
+# 8. DNS Records (pointent vers les bonnes IPs)
+resource "scaleway_domain_record" "main" {
+  for_each = toset(local.environments)
+
+  dns_zone = "polytech-dijon.kiowy.net"
+  name     = local.domain_name[each.key]
   type     = "A"
-  data     = scaleway_lb.lb_dev.ip_address
-  ttl      = 3600
+  data     = scaleway_lb_ip.main[each.key].ip_address
+  ttl      = 300
 }
 
-# Enregistrement DNS pour l'environnement de PRODUCTION
-resource "scaleway_domain_record" "dns_prod" {
-  dns_zone = var.dns_zone
-  name     = "calculatrice-moussa-amen"
-  type     = "A"
-  data     = scaleway_lb.lb_prod.ip_address
-  ttl      = 3600
+# Outputs à mettre dans ton README.md
+output "registry_endpoint" {
+  description = "Endpoint du registry"
+  value       = scaleway_registry_namespace.main.endpoint
 }
 
+output "kubeconfig" {
+  description = "Kubeconfig du cluster"
+  value       = scaleway_k8s_cluster.main.kubeconfig[0].config_file
+  sensitive   = true
+}
+
+output "db_endpoint" {
+  description = "Endpoint de la base PostgreSQL"
+  value       = "${scaleway_rdb_instance.main.private_network.0.ip}:${scaleway_rdb_instance.main.private_network.0.port}"
+}
