@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: ReplicaSet
 metadata:
   name: backend
   namespace: chaieb-farikou-diomande
@@ -25,11 +25,11 @@ spec:
             memory: "32Mi"
         env:
         - name: REDIS_HOST
-          value: "redis"           # nom du service Redis
+          value: "redis"
         - name: REDIS_PORT
           value: "6379"
         - name: REDIS_PASSWORD
-          value: ""                    # pas de password ici
+          value: ""
         - name: RABBITMQ_HOST
           value: "rabbitmq"
         - name: RABBITMQ_USER
