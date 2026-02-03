@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: chaieb-farikou-diomande
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+      - name: backend
+        image: europe-west1-docker.pkg.dev/polytech-dijon/polytech-dijon/projet-backend:moussa-amen
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+        resources:
+          requests:
+            cpu: "4m"
+            memory: "32Mi"
+        env:
+        - name: REDIS_HOST
+          value: "redis"           # nom du service Redis
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          value: ""                    # pas de password ici
+        - name: RABBITMQ_HOST
+          value: "rabbitmq"
+        - name: RABBITMQ_USER
+          value: "guest"
+        - name: RABBITMQ_PASSWORD
+          value: "guest"
