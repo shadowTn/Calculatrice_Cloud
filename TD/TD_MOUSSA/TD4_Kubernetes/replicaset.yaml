@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: kuard-rs
+  labels:
+    app: kuard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kuard
+  template:
+    metadata:
+      labels:
+        app: kuard
+    spec:
+      containers:
+      - image: europe-west1-docker.pkg.dev/polytech-dijon/polytech-dijon/kuard:blue
+        name: kuard
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
