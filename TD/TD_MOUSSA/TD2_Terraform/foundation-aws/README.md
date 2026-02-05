@@ -1,6 +1,6 @@
-# TD2 – Terraform AWS
+#TD2 – Terraform AWS
 
-## 🎯 Objectif
+ Objectif
 Déployer un bucket S3 privé sur AWS à l’aide de Terraform.
 
 Ce TD permet de comprendre :
